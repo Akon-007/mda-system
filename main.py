@@ -144,3 +144,9 @@ async def mda_websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(2)  # Update tick interval
     except WebSocketDisconnect:
         print("[-] Tactical Command Workstation Disconnected.")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
