@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Maritime Domain Awareness System (MDA) - Tactical UI</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Courier New', monospace; background-color: #0b0f19; color: #00ffcc; }
+        #header { height: 50px; background: #111a2e; display: flex; align-items: center; padding-left: 20px; border-bottom: 2px solid #00ffcc; }
+        #map { height: calc(100vh - 50px); width: 100%; }
+        .critical-alert { animation: blinker 1s linear infinite; color: #ff3333; font-weight: bold; }
+        @keyframes blinker { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <h2>⚡ MDA SYSTEM BRIEFING: GULF OF GUINEA OPERATIONS</h2>
+    </div>
+    <div id="map"></div>
+
+    <script>
+        // Initialize Geospatial Map focusing on Western Africa Coastline
+        const map = L.map('map').setView([4.5, 5.5], 7);
+
+        // Dark-mode map skin for tactical aesthetic
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: 'MDA Tactical Map Data'
+        }).addTo(map);
+
+        // Draw exclusive economic zone (EEZ) boundaries 
+        const eezPolygonCoordinates = [
+            [6.3, 2.5], [6.3, 8.5], [2.0, 8.5], [2.0, 2.5]
+        ];
+        const eezZone = L.polygon(eezPolygonCoordinates, {
+            color: '#00ffcc',
+            weight: 2,
+            fillColor: '#00ffcc',
+            fillOpacity: 0.05
+        }).addTo(map).bindPopup("<b>Exclusive Economic Zone (EEZ) Perimeter</b>");
+
+        // Object store to manipulate live tracking markers
+        let activeMarkers = {};
+
+        // Establish socket synchronization path to Python engine
+        const socket = new WebSocket("ws://localhost:8000/ws/mda");
+
+        socket.onmessage = function(event) {
+            const trackingData = JSON.parse(event.data);
+
+            // Loop through data updates
+            trackingData.forEach(target => {
+                let color = "#00ff00"; // Default clear status
+                let radius = 6;
+
+                if (target.risk === "Critical") {
+                    color = "#ff3333"; // Alert styling for Dark Vessels
+                    radius = 9;
+                } else if (target.risk === "Medium") {
+                    color = "#ffcc00"; // Warnings (Loitering)
+                    radius = 7;
+                }
+
+                const popupContent = `
+                    <div style="color:#111;">
+                        <b>ID:</b> ${target.id}<br>
+                        <b>Vessel Name:</b> ${target.name}<br>
+                        <b>Position:</b> Lat ${target.lat.toFixed(4)}, Lng ${target.lng.toFixed(4)}<br>
+                        <b style="color:${color === '#ff3333' ? 'red' : 'black'}">Status: ${target.anomaly}</b><br>
+                        <b>Inside EEZ:</b> ${target.inside_eez ? "YES" : "NO"}
+                    </div>
+                `;
+
+                if (activeMarkers[target.id]) {
+                    // Update current live target geometry coordinates dynamically
+                    activeMarkers[target.id].setLatLng([target.lat, target.lng]);
+                    activeMarkers[target.id].setPopupContent(popupContent);
+                    
+                    // Trigger live pulse adjustments if threat status evolves
+                    activeMarkers[target.id].setStyle({ color: color, radius: radius });
+                } else {
+                    // Instantiation loop for new tracks entering zone maps
+                    const marker = L.circleMarker([target.lat, target.lng], {
+                        color: color,
+                        radius: radius,
+                        fillColor: color,
+                        fillOpacity: 0.8,
+                        weight: 2
+                    }).addTo(map).bindPopup(popupContent);
+
+                    activeMarkers[target.id] = marker;
+                }
+            });
+        };
+
+        socket.onclose = () => console.log("[-] Strategic Feed Terminated.");
+    </script>
+</body>
+</html>
