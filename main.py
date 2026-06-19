@@ -134,16 +134,15 @@ async def get_dashboard():
 @app.websocket("/ws/mda")
 async def mda_websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("[+] Tactical Command Workstation Connected.")
+    print("[+] Tactical Command Link Established.")
     try:
         while True:
-            # Process correlation pass
+            # Calculate and send immediately on connection/tick
             current_tactical_picture = simulator.process_analytics()
-            # Send serialized stream to tactical map UI
             await websocket.send_text(json.dumps(current_tactical_picture))
-            await asyncio.sleep(2)  # Update tick interval
+            await asyncio.sleep(2)  # Keep feeding updates every 2 seconds
     except WebSocketDisconnect:
-        print("[-] Tactical Command Workstation Disconnected.")
+        print("[-] Tactical Command Link Severed.")
 
 
 if __name__ == "__main__":

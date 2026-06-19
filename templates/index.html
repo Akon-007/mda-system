@@ -21,80 +21,68 @@
     <div id="map"></div>
 
     <script>
-        // Initialize Geospatial Map focusing on Western Africa Coastline
+        // 1. Initialize the Map View over the Gulf of Guinea
         const map = L.map('map').setView([4.5, 5.5], 7);
 
-        // Dark-mode map skin for tactical aesthetic
+        // 2. Load the Dark Tactical Map Skin
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: 'MDA Tactical Map Data'
+            attribution: 'MDA Tactical Framework'
         }).addTo(map);
 
-        // Draw exclusive economic zone (EEZ) boundaries 
-        const eezPolygonCoordinates = [
+        // 3. Render the Bounding Box Boundaries 
+        const eezZone = L.polygon([
             [6.3, 2.5], [6.3, 8.5], [2.0, 8.5], [2.0, 2.5]
-        ];
-        const eezZone = L.polygon(eezPolygonCoordinates, {
-            color: '#00ffcc',
-            weight: 2,
-            fillColor: '#00ffcc',
-            fillOpacity: 0.05
+        ], {
+            color: '#00ffcc', weight: 2, fillColor: '#00ffcc', fillOpacity: 0.04
         }).addTo(map).bindPopup("<b>Exclusive Economic Zone (EEZ) Perimeter</b>");
 
-        // Object store to manipulate live tracking markers
         let activeMarkers = {};
 
-        // Establish socket synchronization path to Python engine
-        const socket = new WebSocket("ws://localhost:8000/ws/mda");
+        // 4. THE CLEANED WEBSOCKET BLOCK (PASTE HERE)
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const socket = new WebSocket(`${protocol}${window.location.host}/ws/mda`);
+
+        socket.onopen = function(e) {
+            console.log("[+] Live Tactical Feed Connected Securely.");
+        };
 
         socket.onmessage = function(event) {
             const trackingData = JSON.parse(event.data);
+            console.log("Tactical Update Received:", trackingData); 
 
-            // Loop through data updates
             trackingData.forEach(target => {
-                let color = "#00ff00"; // Default clear status
+                let color = "#00ff00"; 
                 let radius = 6;
 
                 if (target.risk === "Critical") {
-                    color = "#ff3333"; // Alert styling for Dark Vessels
+                    color = "#ff3333"; 
                     radius = 9;
                 } else if (target.risk === "Medium") {
-                    color = "#ffcc00"; // Warnings (Loitering)
+                    color = "#ffcc00"; 
                     radius = 7;
                 }
 
                 const popupContent = `
-                    <div style="color:#111;">
-                        <b>ID:</b> ${target.id}<br>
-                        <b>Vessel Name:</b> ${target.name}<br>
-                        <b>Position:</b> Lat ${target.lat.toFixed(4)}, Lng ${target.lng.toFixed(4)}<br>
-                        <b style="color:${color === '#ff3333' ? 'red' : 'black'}">Status: ${target.anomaly}</b><br>
-                        <b>Inside EEZ:</b> ${target.inside_eez ? "YES" : "NO"}
+                    <div style="color:#111; font-family: sans-serif;">
+                        <b>Target Track:</b> ${target.id}<br>
+                        <b>Identity:</b> ${target.name}<br>
+                        <b>Coordinates:</b> [${target.lat.toFixed(4)}, ${target.lng.toFixed(4)}]<br>
+                        <b style="color:${color === '#ff3333' ? 'red' : 'orange'}">Classification: ${target.anomaly}</b><br>
+                        <b>Inside EEZ Boundary:</b> ${target.inside_eez ? "YES" : "NO"}
                     </div>
                 `;
 
                 if (activeMarkers[target.id]) {
-                    // Update current live target geometry coordinates dynamically
                     activeMarkers[target.id].setLatLng([target.lat, target.lng]);
                     activeMarkers[target.id].setPopupContent(popupContent);
-                    
-                    // Trigger live pulse adjustments if threat status evolves
-                    activeMarkers[target.id].setStyle({ color: color, radius: radius });
+                    activeMarkers[target.id].setStyle({ color: color, radius: radius, fillColor: color });
                 } else {
-                    // Instantiation loop for new tracks entering zone maps
                     const marker = L.circleMarker([target.lat, target.lng], {
-                        color: color,
-                        radius: radius,
-                        fillColor: color,
-                        fillOpacity: 0.8,
-                        weight: 2
+                        color: color, radius: radius, fillColor: color, fillOpacity: 0.8, weight: 2
                     }).addTo(map).bindPopup(popupContent);
 
                     activeMarkers[target.id] = marker;
                 }
             });
         };
-
-        socket.onclose = () => console.log("[-] Strategic Feed Terminated.");
     </script>
-</body>
-</html>
