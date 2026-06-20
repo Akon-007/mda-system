@@ -1,88 +1,601 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Maritime Domain Awareness System (MDA) - Tactical UI</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        body { margin: 0; padding: 0; font-family: 'Courier New', monospace; background-color: #0b0f19; color: #00ffcc; }
-        #header { height: 50px; background: #111a2e; display: flex; align-items: center; padding-left: 20px; border-bottom: 2px solid #00ffcc; }
-        #map { height: calc(100vh - 50px); width: 100%; }
-        .critical-alert { animation: blinker 1s linear infinite; color: #ff3333; font-weight: bold; }
-        @keyframes blinker { 50% { opacity: 0; } }
-    </style>
+<meta charset="utf-8">
+<title>Maritime Domain Awareness — Gulf of Guinea</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e1a; color: #cdd9e5; overflow: hidden; }
+
+#header {
+  height: 52px; background: linear-gradient(90deg, #0d1a2e, #132744, #0d1a2e);
+  border-bottom: 1px solid #1f3a5f; display: flex; align-items: center;
+  padding: 0 20px; justify-content: space-between;
+}
+#header .logo { font-size: 16px; font-weight: 700; color: #5fc9ff; letter-spacing: 2px; }
+#header .logo span { color: #ff4d4d; }
+#header .meta { display: flex; gap: 16px; font-size: 12px; color: #6c7a93; }
+#header .meta .live { color: #4ade80; }
+#header .meta .live::before { content: "●"; margin-right: 4px; animation: blink 2s infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+
+#tabs { display: flex; background: #0d1a2e; border-bottom: 1px solid #1f3a5f; }
+.tab {
+  padding: 12px 28px; cursor: pointer; font-size: 13px; font-weight: 600;
+  color: #6c7a93; border-bottom: 3px solid transparent; transition: all 0.2s;
+}
+.tab:hover { color: #cdd9e5; background: #152740; }
+.tab.active { color: #5fc9ff; border-bottom-color: #5fc9ff; background: #0a0e1a; }
+
+#main { height: calc(100vh - 89px); position: relative; }
+.tab-content { display: none; height: 100%; }
+.tab-content.active { display: flex; }
+
+/* ─── MAP TAB ─── */
+#map-panel { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+
+#map-sidebar {
+  width: 360px; 
+  background: #0d1a2e; 
+  border-left: 1px solid #1f3a5f;
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden; /* Prevent whole sidebar from scrolling */
+}
+
+/* Strict 3-row layout for sidebar */
+.sidebar-section { 
+  display: flex; 
+  flex-direction: column; 
+  min-height: 0; /* CRITICAL FIX: allows flex item to shrink and enable inner scroll */
+  border-bottom: 1px solid #1f3a5f; 
+}
+.sidebar-section.top { flex: 0 0 30%; }
+.sidebar-section.middle { flex: 1 1 0; } /* Takes remaining space */
+.sidebar-section.bottom { flex: 0 0 25%; }
+
+.sidebar-section h3 {
+  padding: 10px 14px; font-size: 11px; color: #5fc9ff; letter-spacing: 1px;
+  background: #152740; flex-shrink: 0; /* Prevent header from squishing */
+}
+
+.scroll-container {
+  flex: 1;
+  min-height: 0; /* CRITICAL FIX: allows content to scroll */
+  overflow-y: auto; 
+  padding: 8px;
+}
+
+.asset-row, .incident-row {
+  padding: 8px 14px; border-bottom: 1px solid #152740; font-size: 12px; cursor: pointer;
+}
+.asset-row:hover, .incident-row:hover { background: #152740; }
+.asset-row .name { font-weight: 600; color: #e0e7ef; }
+.asset-row .info { color: #6c7a93; font-size: 11px; margin-top: 2px; }
+.status-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+.s-normal     { background: #1a3a1a; color: #4ade80; }
+.s-loitering  { background: #3a2a1a; color: #ffae42; }
+.s-dark       { background: #2a1a1a; color: #ff4d4d; }
+.s-rendezvous { background: #2a1a1a; color: #ff4d4d; }
+
+.alert-entry {
+  background: #152740; border-left: 4px solid #444; border-radius: 4px;
+  padding: 8px 10px; margin-bottom: 6px; font-size: 12px;
+}
+.alert-entry.critical { border-color: #ff4d4d; background: #2a1414; }
+.alert-entry.warning  { border-color: #ffae42; background: #2a1f12; }
+.alert-entry.info     { border-color: #4a90e2; }
+.alert-entry .time { color: #6c7a93; font-size: 10px; }
+.alert-entry .msg  { color: #e0e7ef; margin-top: 2px; }
+.alert-entry .src  { color: #5fc9ff; font-size: 10px; }
+
+/* ─── NET OPS TAB ─── */
+#net-panel { flex: 1; padding: 20px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.card {
+  background: #0d1a2e; border: 1px solid #1f3a5f; border-radius: 8px; padding: 16px;
+}
+.card h3 { font-size: 12px; color: #5fc9ff; letter-spacing: 1px; margin-bottom: 12px; }
+.metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.metric {
+  background: #152740; border-radius: 6px; padding: 12px; text-align: center;
+}
+.metric .val { font-size: 24px; font-weight: 700; color: #5fc9ff; }
+.metric .lbl { font-size: 10px; color: #6c7a93; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+.metric .val.good { color: #4ade80; }
+.metric .val.warn { color: #ffae42; }
+.metric .val.bad  { color: #ff4d4d; }
+
+table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.data-table th { text-align: left; padding: 6px 8px; color: #6c7a93; border-bottom: 1px solid #1f3a5f; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+table.data-table td { padding: 6px 8px; border-bottom: 1px solid #152740; }
+table.data-table tr:hover { background: #152740; }
+
+/* ─── ALERT TAB ─── */
+#alert-panel { flex: 1; display: flex; width: 100%; }
+#alert-compose {
+  width: 420px; background: #0d1a2e; border-right: 1px solid #1f3a5f; padding: 20px;
+  flex-shrink: 0; overflow-y: auto;
+}
+#alert-compose h3 { font-size: 13px; color: #5fc9ff; margin-bottom: 16px; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 11px; color: #6c7a93; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+.field input, .field select, .field textarea {
+  width: 100%; background: #152740; border: 1px solid #1f3a5f; border-radius: 4px;
+  color: #cdd9e5; padding: 8px 10px; font-size: 13px; font-family: inherit;
+}
+.field textarea { resize: vertical; min-height: 80px; }
+.btn {
+  background: linear-gradient(90deg, #1a3a5f, #2a4a6f); border: 1px solid #3a5a7f;
+  color: #5fc9ff; padding: 10px 20px; border-radius: 4px; cursor: pointer;
+  font-size: 13px; font-weight: 600; letter-spacing: 1px; width: 100%;
+}
+.btn:hover { background: linear-gradient(90deg, #2a4a6f, #3a5a8f); }
+.btn.danger { background: linear-gradient(90deg, #5a1a1a, #7a2a2a); border-color: #8a3a3a; color: #ffaaaa; }
+
+#alert-history {
+  flex: 1; 
+  min-height: 0; /* Fix for scrolling */
+  overflow-y: auto; 
+  padding: 20px;
+}
+#alert-history h3 { font-size: 13px; color: #5fc9ff; margin-bottom: 16px; }
+.alert-card {
+  background: #0d1a2e; border: 1px solid #1f3a5f; border-radius: 8px;
+  padding: 14px; margin-bottom: 12px;
+}
+.alert-card .header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.alert-card .aid { font-weight: 700; color: #5fc9ff; font-size: 13px; }
+.alert-card .sev { font-size: 10px; padding: 2px 8px; border-radius: 3px; }
+.alert-card .msg { color: #e0e7ef; font-size: 13px; margin-bottom: 8px; }
+.progress-bar { height: 8px; background: #152740; border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: #4ade80; transition: width 0.3s; }
+.alert-card .stats { display: flex; justify-content: space-between; font-size: 11px; color: #6c7a93; margin-top: 6px; }
+
+/* ─── INTEL TAB ─── */
+#intel-panel { flex: 1; padding: 20px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.chart-card { background: #0d1a2e; border: 1px solid #1f3a5f; border-radius: 8px; padding: 16px; }
+.chart-card h3 { font-size: 12px; color: #5fc9ff; margin-bottom: 12px; }
+.chart-card canvas { max-height: 220px; }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0a0e1a; }
+::-webkit-scrollbar-thumb { background: #1f3a5f; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #2f4a6f; }
+</style>
 </head>
 <body>
 
-    <div id="header">
-        <h2>⚡ MDA SYSTEM BRIEFING: GULF OF GUINEA OPERATIONS</h2>
-    </div>
+<div id="header">
+  <div class="logo">⚓ MARITIME <span>MDA</span> — GULF OF GUINEA</div>
+  <div class="meta">
+    <span class="live">LIVE FEED</span>
+    <span>OPERATOR: CMDR-01</span>
+  </div>
+</div>
+
+<div id="tabs">
+  <div class="tab active" data-tab="map">🗺 Situational Map</div>
+  <div class="tab" data-tab="net">📡 AIS & SAR Ops</div>
+  <div class="tab" data-tab="alert">🚨 Distress & Alerts</div>
+  <div class="tab" data-tab="intel">📊 Intelligence Dashboard</div>
+</div>
+
+<div id="main">
+
+<!-- ═══ TAB 1: SITUATIONAL MAP ═══ -->
+<div class="tab-content active" id="tab-map">
+  <div id="map-panel">
     <div id="map"></div>
+  </div>
+  <div id="map-sidebar">
+    
+    <div class="sidebar-section top">
+      <h3>🚢 VESSEL TRACKING</h3>
+      <div id="asset-list" class="scroll-container"></div>
+    </div>
+    
+    <div class="sidebar-section middle">
+      <h3>🚨 LIVE ALERT FEED (SAR & AIS)</h3>
+      <div id="alert-feed" class="scroll-container"></div>
+    </div>
+    
+    <div class="sidebar-section bottom">
+      <h3>📋 ACTIVE INCIDENTS</h3>
+      <div id="incident-list" class="scroll-container"></div>
+    </div>
+    
+  </div>
+</div>
 
-    <script>
-        // 1. Initialize the Map View over the Gulf of Guinea
-        const map = L.map('map').setView([4.5, 5.5], 7);
+<!-- ═══ TAB 2: NETWORK OPERATIONS ═══ -->
+<div class="tab-content" id="tab-net">
+  <div id="net-panel">
+    <div class="card" style="grid-column: span 2;">
+      <h3>🌐 FEED HEALTH OVERVIEW</h3>
+      <div class="metric-grid" id="net-health-grid"></div>
+    </div>
+    <div class="card">
+      <h3>📡 COASTAL AIS STATIONS</h3>
+      <table class="data-table" id="gw-table">
+        <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Ships Tracked</th><th>Msgs RX</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>🛰 SAR RADAR DETECTIONS</h3>
+      <table class="data-table" id="sensor-table">
+        <thead><tr><th>Detection ID</th><th>Lat</th><th>Lng</th><th>Confidence</th><th>AIS Match</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>🚢 VESSEL TELEMETRY</h3>
+      <table class="data-table" id="node-table">
+        <thead><tr><th>MMSI</th><th>Name</th><th>Type</th><th>Status</th><th>Speed</th><th>AIS</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>🛡 MARITIME GEOFENCES</h3>
+      <table class="data-table" id="gf-table">
+        <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Radius</th><th>Violations</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
-        // 2. Load the Dark Tactical Map Skin
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: 'MDA Tactical Framework'
-        }).addTo(map);
+<!-- ═══ TAB 3: EMERGENCY ALERTS ═══ -->
+<div class="tab-content" id="tab-alert">
+  <div id="alert-panel">
+    <div id="alert-compose">
+      <h3>📡 BROADCAST MARITIME DISTRESS</h3>
+      <div class="field">
+        <label>Message</label>
+        <textarea id="alert-msg" placeholder="⚠ Mayday, Mayday. Pirate attack reported at Bonny Fairway. All vessels divert."></textarea>
+      </div>
+      <div class="field">
+        <label>Severity</label>
+        <select id="alert-sev">
+          <option value="info">Nav Warning</option>
+          <option value="warning">Suspicious Activity</option>
+          <option value="critical" selected>Mayday / Piracy</option>
+        </select>
+      </div>
+      <button class="btn danger" onclick="sendBroadcast()">📡 BROADCAST TO FLEET</button>
+    </div>
+    <div id="alert-history">
+      <h3>📋 BROADCAST HISTORY & ACK TRACKING</h3>
+      <div id="alert-history-list"></div>
+    </div>
+  </div>
+</div>
 
-        // 3. Render the Bounding Box Boundaries 
-        const eezZone = L.polygon([
-            [6.3, 2.5], [6.3, 8.5], [2.0, 8.5], [2.0, 2.5]
-        ], {
-            color: '#00ffcc', weight: 2, fillColor: '#00ffcc', fillOpacity: 0.04
-        }).addTo(map).bindPopup("<b>Exclusive Economic Zone (EEZ) Perimeter</b>");
+<!-- ═══ TAB 4: INTELLIGENCE DASHBOARD ═══ -->
+<div class="tab-content" id="tab-intel">
+  <div id="intel-panel">
+    <div class="chart-card">
+      <h3>📈 ALERT FREQUENCY (LAST 50 EVENTS)</h3>
+      <canvas id="chart-alert-freq"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>🚨 INCIDENTS BY TYPE</h3>
+      <canvas id="chart-inc-type"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>🚢 VESSEL SPEEDS (KNOTS)</h3>
+      <canvas id="chart-signal"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>🛰 SAR DETECTION CONFIDENCE</h3>
+      <canvas id="chart-battery"></canvas>
+    </div>
+    <div class="chart-card" style="grid-column: span 2;">
+      <h3>📊 INCIDENT SUMMARY</h3>
+      <table class="data-table" id="intel-incident-table">
+        <thead><tr><th>ID</th><th>Type</th><th>Priority</th><th>Status</th><th>Description</th><th>Created</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
-        let activeMarkers = {};
+</div>
 
-        // 4. THE CLEANED WEBSOCKET BLOCK (PASTE HERE)
-        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        const socket = new WebSocket(`${protocol}${window.location.host}/ws/mda`);
+<script>
+let state = null;
+let map, shipLayer, assetLayer, gfLayer, coverageLayer, trailLayer;
+let charts = {};
 
-        socket.onopen = function(e) {
-            console.log("[+] Live Tactical Feed Connected Securely.");
-        };
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'map') setTimeout(() => map.invalidateSize(), 100);
+    if (t.dataset.tab === 'intel') renderCharts();
+  });
+});
 
-        socket.onmessage = function(event) {
-            const trackingData = JSON.parse(event.data);
-            console.log("Tactical Update Received:", trackingData); 
+function initMap() {
+  map = L.map('map').setView([4.5, 6.0], 7);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Esri Ocean', maxZoom: 16
+  }).addTo(map);
+  shipLayer = L.layerGroup().addTo(map);
+  assetLayer = L.layerGroup().addTo(map);
+  gfLayer = L.layerGroup().addTo(map);
+  coverageLayer = L.layerGroup().addTo(map);
+  trailLayer = L.layerGroup().addTo(map);
+}
 
-            trackingData.forEach(target => {
-                let color = "#00ff00"; 
-                let radius = 6;
+const SHIP_ICON = { cargo: '🚢', tanker: '🛢', fishing: '🎣', patrol: '🚤', unknown: '❓' };
+const STATUS_COLOR = { normal: '#4ade80', loitering: '#ffae42', dark: '#ff4d4d', rendezvous: '#ff4d4d' };
 
-                if (target.risk === "Critical") {
-                    color = "#ff3333"; 
-                    radius = 9;
-                } else if (target.risk === "Medium") {
-                    color = "#ffcc00"; 
-                    radius = 7;
-                }
+function renderMap() {
+  if (!map || !state) return;
+  shipLayer.clearLayers(); assetLayer.clearLayers(); gfLayer.clearLayers(); coverageLayer.clearLayers(); trailLayer.clearLayers();
 
-                const popupContent = `
-                    <div style="color:#111; font-family: sans-serif;">
-                        <b>Target Track:</b> ${target.id}<br>
-                        <b>Identity:</b> ${target.name}<br>
-                        <b>Coordinates:</b> [${target.lat.toFixed(4)}, ${target.lng.toFixed(4)}]<br>
-                        <b style="color:${color === '#ff3333' ? 'red' : 'orange'}">Classification: ${target.anomaly}</b><br>
-                        <b>Inside EEZ Boundary:</b> ${target.inside_eez ? "YES" : "NO"}
-                    </div>
-                `;
+  state.network.coverage_points.forEach(cp => {
+    L.circle([cp.lat, cp.lng], {
+      radius: cp.range_km * 1000, color: '#4a90e2', weight: 1, fillOpacity: 0.05, opacity: 0.3
+    }).addTo(coverageLayer);
+  });
 
-                if (activeMarkers[target.id]) {
-                    activeMarkers[target.id].setLatLng([target.lat, target.lng]);
-                    activeMarkers[target.id].setPopupContent(popupContent);
-                    activeMarkers[target.id].setStyle({ color: color, radius: radius, fillColor: color });
-                } else {
-                    const marker = L.circleMarker([target.lat, target.lng], {
-                        color: color, radius: radius, fillColor: color, fillOpacity: 0.8, weight: 2
-                    }).addTo(map).bindPopup(popupContent);
+  state.geofences.forEach(gf => {
+    L.circle([gf.lat, gf.lng], {
+      radius: gf.radius_km * 1000, color: gf.color, weight: 2, fillOpacity: 0.08, dashArray: '6 4'
+    }).addTo(gfLayer).bindTooltip(`${gf.fence_type.toUpperCase()}: ${gf.name}`);
+  });
 
-                    activeMarkers[target.id] = marker;
-                }
-            });
-        };
-    </script>
+  state.offshore_assets.forEach(a => {
+    L.circle([a.lat, a.lng], {
+      radius: a.radius_nm * 1852, color: '#ffae42', weight: 1, fillOpacity: 0.1
+    }).addTo(assetLayer);
+    L.marker([a.lat, a.lng]).addTo(assetLayer).bindPopup(`<b>🛢 ${a.name}</b><br>Offshore Asset`);
+  });
+
+  state.network.nodes.forEach(s => {
+    const color = STATUS_COLOR[s.status];
+    if (s.trail && s.trail.length > 1) {
+      L.polyline(s.trail.map(p => [p.lat, p.lng]), { color, weight: 1, opacity: 0.5 }).addTo(trailLayer);
+    }
+    const pulse = s.status === 'dark' || s.status === 'rendezvous' ? 'animation: blink 1s infinite;' : '';
+    const icon = L.divIcon({
+      html: `<div style="font-size:18px; text-shadow:0 0 4px ${color}, 0 0 8px ${color}; ${pulse}">${SHIP_ICON[s.type]}</div>`,
+      iconSize: [24, 24], iconAnchor: [12, 12]
+    });
+    L.marker([s.lat, s.lng], { icon }).addTo(shipLayer)
+      .bindPopup(`<b>${s.name}</b><br>ID: ${s.id}<br>Type: ${s.type}<br>Speed: ${s.speed.toFixed(1)} kn<br>AIS: ${s.ais_active?'✅ ON':'🚫 OFF'}<br>Status: <b style="color:${color}">${s.status.toUpperCase()}</b>`);
+  });
+}
+
+function renderAssets() {
+  const list = document.getElementById('asset-list');
+  if (!state) return;
+  list.innerHTML = '';
+  state.network.nodes.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'asset-row';
+    div.innerHTML = `
+      <div class="name">${s.name} <span class="status-badge s-${s.status}">${s.status.toUpperCase()}</span></div>
+      <div class="info">📍 ${s.lat.toFixed(3)}, ${s.lng.toFixed(3)} · 🛤️ ${s.speed.toFixed(1)} kn</div>
+    `;
+    div.onclick = () => map.setView([s.lat, s.lng], 9);
+    list.appendChild(div);
+  });
+}
+
+function renderIncidents() {
+  const list = document.getElementById('incident-list');
+  if (!state) return;
+  list.innerHTML = '';
+  state.incidents.filter(i => i.status !== 'resolved').slice(0, 10).forEach(i => {
+    const div = document.createElement('div');
+    div.className = 'incident-row';
+    div.innerHTML = `
+      <div class="name">${i.id} · ${i.type.toUpperCase()} <span class="status-badge s-dark">${i.status.toUpperCase()}</span></div>
+      <div class="info">⚠ ${i.description.substring(0, 50)}... · 📍 ${i.lat.toFixed(2)}, ${i.lng.toFixed(2)}</div>
+    `;
+    div.onclick = () => map.setView([i.lat, i.lng], 9);
+    list.appendChild(div);
+  });
+}
+
+function renderAlertFeed() {
+  const feed = document.getElementById('alert-feed');
+  if (!state) return;
+  feed.innerHTML = '';
+  state.alerts_log.slice().reverse().forEach(a => {
+    const div = document.createElement('div');
+    div.className = `alert-entry ${a.severity}`;
+    div.innerHTML = `
+      <div class="time">${new Date(a.timestamp).toLocaleTimeString()} · ${a.category.toUpperCase()}</div>
+      <div class="msg">${a.message}</div>
+      ${a.source ? `<div class="src">📡 ${a.source}</div>` : ''}
+    `;
+    feed.appendChild(div);
+  });
+}
+
+function renderNetwork() {
+  if (!state) return;
+  const h = state.network.health;
+  const grid = document.getElementById('net-health-grid');
+  const metrics = [
+    { lbl: 'Vessels Tracked', val: h.nodes_online, cls: 'good' },
+    { lbl: 'Dark Vessels', val: h.nodes_total - h.nodes_online, cls: h.nodes_total - h.nodes_online > 0 ? 'bad' : 'good' },
+    { lbl: 'AIS Stations', val: `${h.gateways_online}/${h.gateways_total}`, cls: 'good' },
+    { lbl: 'Feed Coverage', val: `${h.coverage_pct}%`, cls: 'good' },
+    { lbl: 'SAR Pings', val: state.sensors.length, cls: 'good' },
+    { lbl: 'Active Alerts', val: state.broadcasts.length, cls: state.broadcasts.length > 0 ? 'warn' : 'good' },
+  ];
+  grid.innerHTML = metrics.map(m =>
+    `<div class="metric"><div class="val ${m.cls}">${m.val}</div><div class="lbl">${m.lbl}</div></div>`
+  ).join('');
+
+  const gtb = document.querySelector('#gw-table tbody');
+  gtb.innerHTML = state.network.gateways.map(g => `
+    <tr>
+      <td>${g.id}</td><td>${g.name}</td>
+      <td><span class="status-badge s-normal">ONLINE</span></td>
+      <td>${g.vessels_tracked}</td><td>${g.ais_messages_rx}</td>
+    </tr>`).join('');
+
+  const ntb = document.querySelector('#node-table tbody');
+  ntb.innerHTML = state.network.nodes.map(n => `
+    <tr>
+      <td>${n.id}</td><td>${n.name}</td><td>${n.type}</td>
+      <td><span class="status-badge s-${n.status}">${n.status.toUpperCase()}</span></td>
+      <td>${n.speed.toFixed(1)}</td>
+      <td>${n.ais_active ? '✅' : '🚫'}</td>
+    </tr>`).join('');
+
+  const stb = document.querySelector('#sensor-table tbody');
+  stb.innerHTML = state.sensors.map(s => `
+    <tr style="${!s.correlated ? 'color:#ff4d4d' : ''}">
+      <td>${s.id}</td><td>${s.lat.toFixed(3)}</td><td>${s.lng.toFixed(3)}</td>
+      <td>${(s.confidence*100).toFixed(0)}%</td>
+      <td>${s.correlated ? '✅ AIS Match' : '🚨 DARK TARGET'}</td>
+    </tr>`).join('');
+
+  const ftb = document.querySelector('#gf-table tbody');
+  ftb.innerHTML = state.geofences.map(g => `
+    <tr>
+      <td>${g.id}</td><td>${g.name}</td><td>${g.fence_type}</td>
+      <td>${g.radius_km} km</td>
+      <td style="color:${g.violations > 0 ? '#ff4d4d' : '#4ade80'}">${g.violations}</td>
+    </tr>`).join('');
+}
+
+function renderAlertHistory() {
+  const list = document.getElementById('alert-history-list');
+  if (!state) return;
+  list.innerHTML = '';
+  state.broadcasts.slice().reverse().forEach(a => {
+    const pct = a.total_recipients > 0 ? (a.ack_count / a.total_recipients * 100) : 0;
+    const div = document.createElement('div');
+    div.className = 'alert-card';
+    div.innerHTML = `
+      <div class="header">
+        <span class="aid">${a.id}</span>
+        <span class="sev" style="background:${a.severity==='critical'?'#ff4d4d':'#ffae42'}; color:#000;">${a.severity.toUpperCase()}</span>
+      </div>
+      <div class="msg">${a.message}</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="stats">
+        <span>ACK: ${a.ack_count}/${a.total_recipients} vessels</span>
+        <span>${pct.toFixed(0)}%</span>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function renderCharts() {
+  if (!state) return;
+
+  const freqData = {};
+  state.alerts_log.forEach(a => {
+    const cat = a.category;
+    freqData[cat] = (freqData[cat] || 0) + 1;
+  });
+  makeChart('chart-alert-freq', 'bar', Object.keys(freqData), Object.values(freqData), '#5fc9ff');
+
+  const incData = {};
+  state.incidents.forEach(i => {
+    incData[i.type] = (incData[i.type] || 0) + 1;
+  });
+  makeChart('chart-inc-type', 'doughnut', Object.keys(incData), Object.values(incData),
+    ['#ff4d4d', '#ffae42', '#ffe156', '#4a90e2', '#4ade80', '#a855f7']);
+
+  makeChart('chart-signal', 'bar',
+    state.network.nodes.map(n => n.name),
+    state.network.nodes.map(n => n.speed),
+    '#4ade80');
+
+  makeChart('chart-battery', 'bar',
+    state.sensors.map(s => s.id),
+    state.sensors.map(s => s.confidence * 100),
+    '#ffae42');
+
+  const itb = document.querySelector('#intel-incident-table tbody');
+  itb.innerHTML = state.incidents.map(i => `
+    <tr>
+      <td>${i.id}</td><td>${i.type}</td>
+      <td><span class="status-badge s-dark">${i.priority}</span></td>
+      <td><span class="status-badge s-dark">${i.status}</span></td>
+      <td>${i.description}</td>
+      <td>${new Date(i.created_at).toLocaleTimeString()}</td>
+    </tr>`).join('');
+}
+
+function makeChart(id, type, labels, data, colors) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(ctx, {
+    type,
+    data: {
+      labels,
+      datasets: [{
+        label: id,
+        data,
+        backgroundColor: Array.isArray(colors) ? colors : colors,
+        borderColor: '#1f3a5f',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: type === 'doughnut', labels: { color: '#cdd9e5', font: { size: 10 } } } },
+      scales: type === 'doughnut' ? {} : {
+        x: { ticks: { color: '#6c7a93', font: { size: 8 } }, grid: { color: '#152740' } },
+        y: { ticks: { color: '#6c7a93', font: { size: 9 } }, grid: { color: '#152740' } }
+      }
+    }
+  });
+}
+
+async function sendBroadcast() {
+  const msg = document.getElementById('alert-msg').value.trim();
+  if (!msg) return alert('Enter a message');
+  const sev = document.getElementById('alert-sev').value;
+  const res = await fetch('/api/broadcast', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg, severity: sev })
+  });
+  if (res.ok) {
+    document.getElementById('alert-msg').value = '';
+    alert('✅ Maritime distress broadcast sent to fleet');
+  }
+}
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws/mda`);
+  ws.onmessage = ev => {
+    state = JSON.parse(ev.data);
+    renderMap();
+    renderAssets();
+    renderIncidents();
+    renderAlertFeed();
+    renderNetwork();
+    renderAlertHistory();
+    if (document.getElementById('tab-intel').classList.contains('active')) {
+      renderCharts();
+    }
+  };
+  ws.onclose = () => setTimeout(() => location.reload(), 3000);
+}
+
+initMap();
+connect();
+</script>
+</body>
+</html>
