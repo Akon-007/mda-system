@@ -298,11 +298,15 @@ async def send_broadcast(b: BroadcastCreate):
         id=f"ALR-{uuid.uuid4().hex[:6]}",
         message=b.message, severity=b.severity
     )
-    bc.total_recipients = len(simulator.ships)
-    bc.acknowledgements = {s.id: False for s in simulator.ships.values()}
+    
+    # FIX: Only send to vessels with active AIS transponders (Dark vessels are excluded)
+    active_vessels = [s for s in simulator.ships.values() if s.ais_active]
+    bc.total_recipients = len(active_vessels)
+    bc.acknowledgements = {s.id: False for s in active_vessels}
+    
     simulator.broadcasts.append(bc)
     return {"id": bc.id, "recipients": bc.total_recipients}
-
+    
 @app.websocket("/ws/mda")
 async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
