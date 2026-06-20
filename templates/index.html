@@ -578,8 +578,10 @@ async function sendBroadcast() {
 }
 
 function connect() {
-  const ws = new WebSocket(`ws://${location.host}/ws/mda`);
-  ws.onmessage = ev => {
+  // Automatically use wss:// if the site is loaded on https://
+  const ws_protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${ws_protocol}://${location.host}/ws/mda`);
+    ws.onmessage = ev => {
     state = JSON.parse(ev.data);
     renderMap();
     renderAssets();
