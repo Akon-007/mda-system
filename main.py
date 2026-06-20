@@ -315,4 +315,7 @@ async def ws_endpoint(websocket: WebSocket):
         print("[-] Console disconnected.")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    import os
+    # Render provides the port via environment variable, default to 8000 locally
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
